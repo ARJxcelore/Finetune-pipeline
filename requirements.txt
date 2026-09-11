@@ -1,0 +1,9 @@
+huggingface_hub>=0.34,<2.0
+wandb>=0.22,<1.0
+peft>=0.18,<1.0
+safetensors>=0.5,<1.0
+pytest>=7.4.4
+transformers
+torch
+datasets>=2.19
+fastapi

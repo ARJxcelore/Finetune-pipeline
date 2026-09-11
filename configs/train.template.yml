@@ -1,0 +1,78 @@
+# Axolotl SFT + QLoRA baseline for an RTX 4060 8 GB.
+# This file is rendered per run by src/training/render_config.py.
+base_model: ${BASE_MODEL}
+revision_of_model: ${MODEL_REVISION}
+
+model_type: AutoModelForCausalLM
+tokenizer_type: AutoTokenizer
+
+load_in_4bit: true
+adapter: qlora
+
+sequence_len: ${SEQUENCE_LEN}
+val_set_size: 0.1
+sample_packing: false
+pad_to_sequence_len: false
+
+chat_template: tokenizer_default
+datasets:
+  - path: ${TRAIN_FILE}
+    type: chat_template
+    field_messages: messages
+    roles_to_train: [assistant]
+    train_on_eos: turn
+output_dir: ${OUTPUT_DIR}
+dataset_prepared_path: ${PREPARED_DIR}
+
+# Laptop/consumer-GPU safe defaults.
+micro_batch_size: ${MICRO_BATCH_SIZE}
+gradient_accumulation_steps: ${GRAD_ACCUMULATION}
+num_epochs: ${EPOCHS}
+learning_rate: ${LEARNING_RATE}
+lr_scheduler: cosine
+warmup_ratio: 0.05
+optimizer: paged_adamw_8bit
+weight_decay: 0.0
+max_grad_norm: 1.0
+
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.05
+lora_target_modules:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+  - gate_proj
+  - up_proj
+  - down_proj
+
+bf16: true
+tf32: true
+gradient_checkpointing: true
+use_liger: false
+flash_attention: false
+sdp_attention: true
+
+logging_steps: 5
+eval_steps: 25
+save_steps: 25
+save_total_limit: 2
+load_best_model_at_end: true
+metric_for_best_model: eval_loss
+greater_is_better: false
+
+seed: ${SEED}
+data_seed: ${SEED}
+
+use_wandb: ${USE_WANDB}
+wandb_project: ${WANDB_PROJECT}
+wandb_entity: ${WANDB_ENTITY}
+wandb_name: ${WANDB_RUN_NAME}
+wandb_log_model: end
+
+save_safetensors: true
+
+# Useful to fail fast on broken training.
+loss_watchdog_threshold: 10
+loss_watchdog_patience: 3

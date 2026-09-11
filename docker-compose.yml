@@ -1,0 +1,52 @@
+services:
+  trainer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        AXOLOTL_IMAGE: ${AXOLOTL_IMAGE:-axolotlai/axolotl:0.18.0}
+    image: fine-tuning-pipeline:0.1.0
+    environment:
+      BASE_MODEL: ${BASE_MODEL:-Qwen/Qwen2.5-0.5B-Instruct}
+      MODEL_REVISION: ${MODEL_REVISION:-main}
+      SEQUENCE_LEN: ${SEQUENCE_LEN:-1024}
+      MICRO_BATCH_SIZE: ${MICRO_BATCH_SIZE:-1}
+      GRAD_ACCUMULATION: ${GRAD_ACCUMULATION:-8}
+      EPOCHS: ${EPOCHS:-2}
+      LEARNING_RATE: ${LEARNING_RATE:-0.0002}
+      SEED: ${SEED:-42}
+      VALID_RATIO: ${VALID_RATIO:-0.2}
+      EVAL_MIN_F1: ${EVAL_MIN_F1:-0.35}
+      EVAL_MAX_SAMPLES: ${EVAL_MAX_SAMPLES:-20}
+      EVAL_MAX_NEW_TOKENS: ${EVAL_MAX_NEW_TOKENS:-128}
+      USE_WANDB: ${USE_WANDB:-true}
+      WANDB_PROJECT: ${WANDB_PROJECT:-auto-finetuning}
+      WANDB_ENTITY: ${WANDB_ENTITY:-}
+      HF_MODEL_REPO: ${HF_MODEL_REPO:-}
+      HF_PRIVATE: ${HF_PRIVATE:-true}
+      HF_TOKEN: ${HF_TOKEN:-}
+      WANDB_API_KEY: ${WANDB_API_KEY:-}
+      # Lets the caller pin the run id so it knows where artifacts land without
+      # having to scrape stdout (scripts/run_hdfs_experiment.sh relies on this).
+      RUN_ID: ${RUN_ID:-}
+      MAX_TRAIN_SAMPLES: ${MAX_TRAIN_SAMPLES:-}
+      # This run peaks near 6.7 of 7.6 GiB and OOM'd in the fp32 logits allocation
+      # (vocab 151936 x seq_len x 4B ~ 1.2 GB at seq 2048). Reducing allocator
+      # fragmentation is the cheapest way to buy back headroom; recommended by the
+      # OOM message itself.
+      PYTORCH_CUDA_ALLOC_CONF: ${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}
+    volumes:
+      - ./artifacts:/workspace/fine-tuning-pipeline/artifacts
+      - ${HF_CACHE_DIR:-./.cache/huggingface}:/cache/huggingface
+      - ./data:/workspace/fine-tuning-pipeline/data
+      - ./configs:/workspace/fine-tuning-pipeline/configs
+    shm_size: "8gb"
+    ipc: host
+    runtime: nvidia
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

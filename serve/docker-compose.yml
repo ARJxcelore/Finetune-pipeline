@@ -1,0 +1,19 @@
+services:
+  model-server:
+    build: .
+    environment:
+      MODEL_ID: ${MODEL_ID}
+      HF_TOKEN: ${HF_TOKEN:-}
+      MAX_NEW_TOKENS: ${MAX_NEW_TOKENS:-256}
+      HF_HOME: /cache/huggingface
+    ports:
+      - "8080:8080"
+    volumes:
+      - ${HF_CACHE_DIR:-../.cache/huggingface}:/cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

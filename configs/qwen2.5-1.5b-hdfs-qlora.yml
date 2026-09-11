@@ -1,0 +1,110 @@
+# Axolotl QLoRA config for HDFS anomaly classification on an RTX 4060 8 GB.
+# HDFS-specific settings only; general conventions match configs/train.template.yml.
+# Rendered by src/training/render_config.py --template configs/qwen2.5-1.5b-hdfs-qlora.yml
+base_model: ${BASE_MODEL}
+revision_of_model: ${MODEL_REVISION}
+
+model_type: AutoModelForCausalLM
+tokenizer_type: AutoTokenizer
+
+load_in_4bit: true
+adapter: qlora
+
+sequence_len: ${SEQUENCE_LEN}
+sample_packing: false
+pad_to_sequence_len: false
+
+# Axolotl defaults dataset tokenization to one worker per CPU core (24 here), which
+# forks 24 processes each holding tokenizer + dataset state. On a 15 GB machine that
+# spiked RAM to ~12 GB and the kernel OOM-killed the run mid-tokenization -- exactly
+# the 16 GB constraint called out in the root README.md. 8 is plenty for 20k rows.
+dataset_num_proc: 8
+
+chat_template: tokenizer_default
+datasets:
+  - path: ${TRAIN_FILE}
+    type: chat_template
+    field_messages: messages
+    roles_to_train: [assistant]
+    train_on_eos: turn
+test_datasets:
+  # A small fixed subsample of the validation split, NOT the full validation
+  # set -- this only feeds load_best_model_at_end/metric_for_best_model
+  # checkpoint selection during training. On a real-sized dataset, evaluating
+  # the full validation split every eval_steps is the single biggest cause of
+  # a training run effectively never finishing (measured: ~4 hours per full
+  # eval pass at eval_batch_size 1 on 57k validation rows). The real,
+  # rigorous evaluation is src.evaluation.hdfs_evaluate against test.jsonl,
+  # run once after training -- see docs/HDFS_ANOMALY_DETECTION.md.
+  - path: ${QUICK_VALID_FILE}
+    type: chat_template
+    field_messages: messages
+    roles_to_train: [assistant]
+    train_on_eos: turn
+    split: train
+output_dir: ${OUTPUT_DIR}
+dataset_prepared_path: ${PREPARED_DIR}
+
+# Laptop/consumer-GPU safe defaults -- see docs/HDFS_ANOMALY_DETECTION.md for the memory budget.
+micro_batch_size: ${MICRO_BATCH_SIZE}
+# Deliberately NOT setting eval_batch_size higher than micro_batch_size: Axolotl
+# warns that mismatched eval/train batch sizes cause VRAM instability, and this
+# run already peaks near 6.7 of 7.6 GiB. Eval speed is instead handled by using
+# a small quick-eval subset (see test_datasets above), which is the far bigger win.
+gradient_accumulation_steps: ${GRAD_ACCUMULATION}
+num_epochs: ${EPOCHS}
+learning_rate: ${LEARNING_RATE}
+lr_scheduler: cosine
+warmup_ratio: 0.05
+optimizer: paged_adamw_8bit
+weight_decay: 0.01
+max_grad_norm: 1.0
+
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.05
+lora_target_modules:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+  - gate_proj
+  - up_proj
+  - down_proj
+
+bf16: auto
+tf32: true
+gradient_checkpointing: true
+use_liger: false
+flash_attention: false
+# `sdp_attention: true` (used by the generic template) is deprecated in this
+# pinned Axolotl version; this is the replacement it asks for.
+attn_implementation: sdpa
+
+logging_steps: 5
+# 25 (this repo's generic toy-dataset default) evaluates/checkpoints far too
+# often at real-HDFS-dataset scale. At ~6.5 s/step and a ~4 min quick-eval,
+# 500 keeps eval overhead at roughly 7% of wall clock and still yields ~10
+# checkpoints over a 2-epoch 20k-example run for load_best_model_at_end to
+# choose between. A --max-train-samples smoke run is shorter than one interval,
+# so it evaluates/saves once at the end rather than mid-run.
+eval_steps: 500
+save_steps: 500
+save_total_limit: 2
+load_best_model_at_end: true
+metric_for_best_model: eval_loss
+greater_is_better: false
+
+seed: ${SEED}
+data_seed: ${SEED}
+
+use_wandb: ${USE_WANDB}
+wandb_project: ${WANDB_PROJECT}
+wandb_entity: ${WANDB_ENTITY}
+wandb_name: ${WANDB_RUN_NAME}
+wandb_log_model: end
+
+save_safetensors: true
+
+loss_watchdog_threshold: 10
+loss_watchdog_patience: 3

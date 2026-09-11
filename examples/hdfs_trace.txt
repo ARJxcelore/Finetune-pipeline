@@ -1,0 +1,4 @@
+081109 INFO dfs.DataNode$PacketResponder: Received block blk_-1608999687919862906 of size 91178 from /10.251.43.115
+081109 INFO dfs.DataNode$PacketResponder: PacketResponder 1 for block blk_-1608999687919862906 terminating
+081109 WARN dfs.DataNode$DataXceiver: 10.251.43.115:50010:Got exception while serving blk_-1608999687919862906 to /10.251.30.85
+081109 INFO dfs.DataNode$DataXceiver: Receiving block blk_-1608999687919862906 src: /10.251.30.85:50276 dest: /10.251.30.85:50010

@@ -1,0 +1,95 @@
+name: Fine-tune Model
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_model:
+        description: Hugging Face base model
+        required: true
+        default: Qwen/Qwen2.5-0.5B-Instruct
+      epochs:
+        description: Training epochs
+        required: true
+        default: "2"
+      sequence_len:
+        description: Maximum sequence length
+        required: true
+        default: "1024"
+      eval_min_f1:
+        description: Minimum evaluation token-F1 required to release
+        required: true
+        default: "0.35"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pytest
+      - run: python -m src.data.validate data/raw/dataset.jsonl
+      - run: pytest -q
+
+  train:
+    needs: validate
+    runs-on: [self-hosted, linux, x64, gpu]
+    timeout-minutes: 1440
+    env:
+      BASE_MODEL: ${{ inputs.base_model }}
+      MODEL_REVISION: main
+      EPOCHS: ${{ inputs.epochs }}
+      SEQUENCE_LEN: ${{ inputs.sequence_len }}
+      MICRO_BATCH_SIZE: "1"
+      GRAD_ACCUMULATION: "8"
+      LEARNING_RATE: "0.0002"
+      SEED: "42"
+      VALID_RATIO: "0.2"
+      EVAL_MIN_F1: ${{ inputs.eval_min_f1 }}
+      EVAL_MAX_SAMPLES: "20"
+      EVAL_MAX_NEW_TOKENS: "128"
+      USE_WANDB: "true"
+      WANDB_PROJECT: auto-finetuning
+      WANDB_ENTITY: ${{ secrets.WANDB_ENTITY }}
+      WANDB_API_KEY: ${{ secrets.WANDB_API_KEY }}
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      HF_MODEL_REPO: ${{ secrets.HF_MODEL_REPO }}
+      HF_PRIVATE: "true"
+      HF_CACHE_DIR: ${{ runner.temp }}/hf-cache
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show GPU
+        run: nvidia-smi
+
+      - name: Prepare cache directory
+        run: mkdir -p "$HF_CACHE_DIR"
+
+      - name: Build training image
+        run: docker compose build trainer
+
+      - name: Run training pipeline
+        run: |
+          docker compose run --rm \
+            -e BASE_MODEL="$BASE_MODEL" \
+            -e MODEL_REVISION="$MODEL_REVISION" \
+            -e EPOCHS="$EPOCHS" \
+            -e SEQUENCE_LEN="$SEQUENCE_LEN" \
+            -e EVAL_MIN_F1="$EVAL_MIN_F1" \
+            -e WANDB_API_KEY="$WANDB_API_KEY" \
+            -e WANDB_ENTITY="$WANDB_ENTITY" \
+            -e HF_TOKEN="$HF_TOKEN" \
+            -e HF_MODEL_REPO="$HF_MODEL_REPO" \
+            trainer
+
+      - name: Upload run artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fine-tune-${{ github.run_id }}
+          path: artifacts/
+          retention-days: 14
